@@ -1,0 +1,91 @@
+案A 一本（同時起動方式のみ、切り替え概念なし)で、CSW そっくり構成の別プロジェクトとしての設計をまとめます。
+
+# Codex Desktop Switcher (仮) 設計案
+
+## 1. コンセプト
+
+ChatGPT.app (旧 Codex.app、BundleID `com.openai.codex`) と Codex CLI (`codex`) のプロファイルを隔離し、**複数アカウントのインスタンスを同時に起動する** macOS アプリ。CSW と決定的に違うのは、「切り替え」という概念を持たないこと。プロファイルは常に並存し、それぞれを独立に起動・終了できる。
+
+この差は対象アプリの構造に由来する:
+
+| | Claude Desktop (CSW) | ChatGPT.app |
+|---|---|---|
+| ログインの実体 | データディレクトリ + Keychain 項目 | Chromium user-data-dir 内の Cookie / WebStorage に閉じる |
+| 隔離手段 | シンボリックリンク張替え + Keychain 操作 | 起動フラグ `--user-data-dir` のみ |
+| 同時起動 | 不可 (1 アカウントずつ) | 可 (Chromium ネイティブのマルチプロファイル) |
+| Keychain 操作 | 必要 | 不要 ("Codex Safe Storage" は全プロファイル共通の Cookie 暗号鍵で、触らなくてよい) |
+
+Keychain 管理・シンボリックリンク管理・「アクティブプロファイル」状態がすべて不要になるため、コア層は CSW より大幅に薄くなる。
+
+## 2. リポジトリ構成 (CSW ミラー)
+
+```
+crates/core      # プロファイル管理・インスタンス検出・起動 (ビジネスロジック)
+crates/cli       # clap ベース CLI (仮: `cxs`)
+crates/desktop   # Tauri v2 GUI (システムトレイ常駐)
+docs/            # SPECIFICATION.md / USER_GUIDE.md / USER_GUIDE_EN.md
+website/         # LP (ja/en)
+.agents/skills/  # CSW からスキル移植 (出元名の scrub を忘れない)
+```
+
+## 3. プロファイルモデル
+
+```
+~/Library/Application Support/<app-id>/profiles/<name>/
+├── profile.json   # 表示名・作成日時・メタデータ
+├── gui/           # ChatGPT.app に渡す user-data-dir (Chromium が自動生成)
+└── cli/           # CODEX_HOME として使うディレクトリ (auth.json 等が入る)
+```
+
+- **default プロファイルは「素の環境」のエイリアス**とする。`gui = ~/Library/Application Support/Codex`、`cli = ~/.codex` を指すだけで、移動もコピーもしない。既存環境を壊さないことが最優先。default はフラグなし (`open -a`) で起動する。
+- 追加プロファイルは空ディレクトリから始まり、初回起動時に ChatGPT.app 側が user-data-dir を初期化、ユーザーがそのウィンドウでログインする。
+
+## 4. コア層 (`crates/core`) の責務
+
+1. **プロファイル CRUD**: 作成・一覧・改名・削除 (削除はログイン情報ごと消える旨を確認してから)。
+2. **起動**:
+   ```
+   default:  open -a  /Applications/ChatGPT.app
+   その他:   open -na /Applications/ChatGPT.app --args --user-data-dir=<profiles/<name>/gui>
+   ```
+   `-n` が必須 (なければ既存インスタンスにフォーカスするだけ)。同一プロファイルの二重起動は Chromium の Singleton 機構が既存ウィンドウへのフォーカスに変えてくれるので、アプリ側で排他制御は不要。
+3. **実行状態検出**: `ps` でメインプロセス (`ChatGPT.app/Contents/MacOS/ChatGPT`、`--type=` を持つ子プロセスは除外) を列挙し、`--user-data-dir` 引数をプロファイルに突き合わせる。引数なしのプロセス = default。補助的に `gui/SingletonLock` の有無も使えるが、クラッシュ残骸があるためプロセス実在確認を正とする。
+4. **CLI 連携**: `cxs env <name>` が `export CODEX_HOME=<profiles/<name>/cli>` を出力 (`eval $(cxs env work)` 方式)。CODEX_HOME は codex-cli バイナリでサポートを確認済み。
+5. **OS パス抽象化**: CSW と同様にトレイト化し、テストでは一時ディレクトリ実装に差し替える。Keychain プロバイダ層は**作らない**。
+
+## 5. GUI (`crates/desktop`)
+
+トレイ常駐。メニューはプロファイルごとに 1 行:
+
+```
+work      ● 起動中     [この環境を起動 / 終了]
+personal  ○ 停止中     [この環境を起動]
+default   ● 起動中
+──────────────
+プロファイルを追加...
+設定 / 終了
+```
+
+- CSW で確定させた語彙「この環境を起動」をそのまま使う (切替ボタンは存在しない)。
+- 「終了」は該当インスタンスのメインプロセスへ graceful terminate (AppleScript `quit` は全インスタンスに効いてしまう可能性があるため、PID 指定の `SIGTERM` を基本とし、実測で挙動確認して決める)。
+- i18n は CSW の実装原則 (2)〜(5) をそのまま移植: `navigator.language` + `?lang=` 上書き、`data-en` 対訳、トレイは Rust 側で `sys-locale` 判定、プロファイル名などユーザーデータは翻訳対象外。
+
+## 6. 既知のリスクと設計上の対処
+
+1. **`--user-data-dir` は非公式インターフェース**。Chromium 標準スイッチなので消される可能性は低いが、OpenAI が独自ビルドで無効化する余地はある。起動後に「指定 dir が実際に populate されたか」を検証し、失敗を検出したらユーザーに通知する仕組みを入れる。
+2. **`codex://` URL スキーム (ログインコールバック) の配送先が不定**。複数インスタンス起動中にブラウザ経由でログインすると、LaunchServices がコールバックをどのインスタンスに渡すか保証がない。**新規プロファイルの初回ログインは、そのインスタンスだけを起動した状態で行う**ことを仕様として明記し、GUI でも複数起動中のログイン操作時に注意を出す。ここが本プロジェクト最大の落とし穴なので、仕様合意の段階で実機検証する。
+3. **Dock アイコンが区別できない**。全インスタンスが同じ ChatGPT アイコンで並ぶ。macOS 側から安全に変える手段はないため v1 では制約として明記し、トレイの実行状態表示を一次 UI とする。
+4. **Sparkle 自動更新**が各インスタンスで独立に走る。実害は小さい見込みだが、更新でアプリが再起動するとフラグが引き継がれるかを実測で確認する。
+5. **GUI 内蔵の Codex 機能が `~/.codex` を直接読む可能性**。GUI プロファイルと CLI プロファイルの対応をユーザー任せにせず、1 プロファイル = gui + cli のペアで管理する (上記モデルの通り)。ただし GUI プロセスに CODEX_HOME を注入する手段は `open` 経由では限られるため、v1 では「GUI 隔離は user-data-dir、CLI 隔離は CODEX_HOME」と役割を明確に分け、GUI 内蔵 CLI の挙動は検証タスクとして仕様に積む。
+
+## 7. 最初のマイルストーン
+
+1. **仕様合意 (spec-first)**: 上記 6-2 (URL スキーム配送) と 6-5 (GUI 内蔵 CLI) の実機検証を先に済ませ、SPECIFICATION.md を確定
+2. core: プロファイル CRUD + 起動 + 検出 (モックパスでテスト)
+3. cli: `cxs list / create / launch / stop / env`
+4. desktop: トレイ UI (CSW の UI 資産を流用)
+5. LP / docs / スクショ (CSW の CI ガード類も移植)
+
+---
+
+設計の勘所は「切り替え状態を持たない分、コアが薄くなる」ことと、リスク 6-2 の**ログインコールバック配送**が唯一の実機検証必須ポイントであることです。新リポジトリを立ち上げる際は、この設計を `docs/proposals/` に置いて spec-first で始めるのが CSW 流に沿った進め方です。リポジトリ作成と検証 (6-2 の実験) に着手する準備ができたら言ってください。

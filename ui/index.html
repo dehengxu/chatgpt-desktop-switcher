@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatGPT Desktop Switcher</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./main.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">LOCAL PROFILE LAUNCHER</p>
+          <h1>ChatGPT Desktop<br />Switcher</h1>
+        </div>
+        <p class="summary">
+          ログイン状態をプロファイルごとに分けて、ChatGPTを同時に起動します。
+        </p>
+      </header>
+
+      <section class="create-area" aria-labelledby="create-title">
+        <div>
+          <h2 id="create-title">プロファイルを追加</h2>
+          <p>初回起動後、そのウインドウで利用するアカウントにログインしてください。</p>
+        </div>
+        <form id="create-form">
+          <label class="sr-only" for="profile-name">プロファイル名</label>
+          <input
+            id="profile-name"
+            name="profile-name"
+            type="text"
+            maxlength="40"
+            autocomplete="off"
+            placeholder="例：work"
+            required
+          />
+          <button class="primary" type="submit">追加</button>
+        </form>
+      </section>
+
+      <section class="profiles-area" aria-labelledby="profiles-title">
+        <div class="section-heading">
+          <h2 id="profiles-title">プロファイル</h2>
+          <button id="refresh-button" class="quiet" type="button">更新</button>
+        </div>
+        <div id="profile-list" class="profile-list" aria-live="polite"></div>
+      </section>
+
+      <div id="message" class="message" role="status" hidden></div>
+    </main>
+  </body>
+</html>
