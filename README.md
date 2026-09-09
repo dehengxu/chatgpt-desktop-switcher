@@ -39,6 +39,10 @@ ChatGPT.app is launched with the following per-profile settings:
 - `gui/`: passed as `--user-data-dir`
 - `cli/`: passed as `CODEX_HOME`
 
+## Localization
+
+The UI ships in English and Japanese. The app follows the macOS system language by default, and the button in the top-right corner of the window switches languages at any time. The choice is remembered across restarts.
+
 ## Current limitations
 
 - macOS only.
@@ -92,6 +96,10 @@ ChatGPT.appは、追加プロファイルごとに次の設定を付けて起動
 
 - `gui/`：`--user-data-dir`
 - `cli/`：`CODEX_HOME`
+
+### 多言語対応
+
+UIは英語と日本語に対応しています。既定ではmacOSのシステム言語に従い、ウインドウ右上のボタンでいつでも切り替えられます。選択は次回起動時も保持されます。
 
 ### 現在の制約
 
