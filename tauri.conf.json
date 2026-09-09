@@ -28,7 +28,7 @@
     "active": true,
     "targets": ["app"],
     "icon": [
-      "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericApplicationIcon.icns"
+      "icons/chatgpt-desktop-switcher.icns"
     ]
   }
 }
