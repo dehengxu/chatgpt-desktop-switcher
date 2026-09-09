@@ -16,7 +16,10 @@
   "action.show": "前面に表示",
   "action.launch": "起動",
   "action.stop": "終了",
+  "action.delete": "削除",
+  "action.deleteConfirm": "削除の確認",
   "message.profileCreated": "プロファイルを追加しました",
+  "message.profileDeleted": "プロファイルを削除しました",
   "message.operationFailed": "操作を完了できませんでした",
   "language.toggle": "English",
   "error.homeDirUnavailable": "ホームディレクトリを取得できませんでした",
@@ -31,6 +34,7 @@
   "error.profileNotFound": "プロファイルが見つかりません",
   "error.launchFailed": "ChatGPT.appを起動できませんでした",
   "error.stopFailed": "ChatGPT.appを終了できませんでした",
+  "error.profileStillRunning": "起動中のプロファイルは終了してから削除してください",
   "error.activateFailed": "実行中のChatGPT.appが見つかりません",
   "error.processListFailed": "実行中のChatGPT.appを確認できませんでした",
   "error.unexpectedError": "予期しないエラーが発生しました: {message}"

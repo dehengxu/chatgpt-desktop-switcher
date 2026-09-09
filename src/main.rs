@@ -158,6 +158,24 @@ fn create_profile(name: String) -> Result<Vec<ProfileView>, AppError> {
 }
 
 #[tauri::command]
+fn delete_profile(name: String) -> Result<Vec<ProfileView>, AppError> {
+    let name = name.trim();
+    validate_profile_name(name)?;
+
+    let dir = profile_dir(name)?;
+    if dir.exists() {
+        let instances = running_instances()?;
+        let gui_dir = dir.join("gui");
+        if pid_for_profile(Some(gui_dir.as_path()), &instances).is_some() {
+            return Err(AppError::new("profileStillRunning"));
+        }
+        fs::remove_dir_all(&dir)?;
+    }
+
+    list_profiles()
+}
+
+#[tauri::command]
 fn list_profiles() -> Result<Vec<ProfileView>, AppError> {
     let instances = running_instances()?;
     let mut profiles = vec![profile_view(DEFAULT_PROFILE, true, &instances)?];
@@ -359,7 +377,8 @@ fn main() {
             create_profile,
             list_profiles,
             launch_profile,
-            stop_profile
+            stop_profile,
+            delete_profile
         ])
         .run(tauri::generate_context!())
         .expect("failed to run ChatGPT Desktop Switcher");
