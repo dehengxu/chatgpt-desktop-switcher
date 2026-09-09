@@ -1,3 +1,4 @@
 /target/
 /gen/
 .DS_Store
+.zcode/
