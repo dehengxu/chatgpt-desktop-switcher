@@ -282,6 +282,16 @@ button:disabled {
   color: var(--text-muted);
 }
 
+.action.danger {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.action.danger:hover,
+.action.danger.confirm {
+  color: var(--error);
+}
+
 .empty,
 .loading {
   padding: 34px 0;

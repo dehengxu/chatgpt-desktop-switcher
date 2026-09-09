@@ -16,7 +16,10 @@
   "action.show": "Bring to Front",
   "action.launch": "Launch",
   "action.stop": "Quit",
+  "action.delete": "Delete",
+  "action.deleteConfirm": "Confirm delete",
   "message.profileCreated": "Profile added",
+  "message.profileDeleted": "Profile deleted",
   "message.operationFailed": "The operation could not be completed",
   "language.toggle": "日本語",
   "error.homeDirUnavailable": "Could not determine the home directory",
@@ -31,6 +34,7 @@
   "error.profileNotFound": "The profile was not found",
   "error.launchFailed": "ChatGPT.app could not be launched",
   "error.stopFailed": "ChatGPT.app could not be quit",
+  "error.profileStillRunning": "Quit the running profile before deleting it",
   "error.activateFailed": "No running ChatGPT.app was found",
   "error.processListFailed": "Could not check for a running ChatGPT.app",
   "error.unexpectedError": "An unexpected error occurred: {message}"

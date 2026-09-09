@@ -14,6 +14,9 @@ let busy = false;
 let renderedProfilesSignature = null;
 let lastProfiles = null;
 let i18nReady = false;
+let pendingDeleteName = null;
+let pendingDeleteButton = null;
+let pendingDeleteTimer;
 
 function showMessage(text, isError = false) {
   window.clearTimeout(messageTimer);
@@ -48,9 +51,36 @@ function profileSignature(profiles) {
   return JSON.stringify(profiles);
 }
 
+function clearPendingDelete() {
+  window.clearTimeout(pendingDeleteTimer);
+  if (pendingDeleteButton) {
+    pendingDeleteButton.textContent = t("action.delete");
+    pendingDeleteButton.classList.remove("confirm");
+  }
+  pendingDeleteName = null;
+  pendingDeleteButton = null;
+}
+
+function handleDeleteClick(profile, button) {
+  if (pendingDeleteName === profile.name) {
+    clearPendingDelete();
+    runProfileAction("delete_profile", profile.name, { successKey: "message.profileDeleted" });
+    return;
+  }
+  clearPendingDelete();
+  pendingDeleteName = profile.name;
+  pendingDeleteButton = button;
+  button.textContent = t("action.deleteConfirm");
+  button.classList.add("confirm");
+  pendingDeleteTimer = window.setTimeout(clearPendingDelete, 3500);
+}
+
 function renderProfiles(profiles, { animate = true } = {}) {
   lastProfiles = profiles;
   renderedProfilesSignature = profileSignature(profiles);
+  window.clearTimeout(pendingDeleteTimer);
+  pendingDeleteName = null;
+  pendingDeleteButton = null;
   list.replaceChildren();
   profiles.forEach((profile, index) => {
     const row = document.createElement("article");
@@ -88,6 +118,12 @@ function renderProfiles(profiles, { animate = true } = {}) {
         ),
       );
     }
+    if (!profile.isDefault) {
+      const deleteButton = createButton(t("action.delete"), "action danger", () =>
+        handleDeleteClick(profile, deleteButton),
+      );
+      actions.append(deleteButton);
+    }
     row.append(identity, status, actions);
     list.append(row);
   });
@@ -111,15 +147,25 @@ async function loadProfiles({ quiet = false } = {}) {
   }
 }
 
-async function runProfileAction(command, name) {
+async function runProfileAction(command, name, { successKey } = {}) {
   if (busy) return;
   busy = true;
   document.querySelectorAll("button").forEach((button) => {
     button.disabled = true;
   });
   try {
-    await invoke(command, { name });
-    window.setTimeout(() => loadProfiles({ quiet: true }), command === "launch_profile" ? 1300 : 500);
+    const profiles = await invoke(command, { name });
+    if (Array.isArray(profiles)) {
+      renderProfiles(profiles, { animate: false });
+    } else {
+      window.setTimeout(
+        () => loadProfiles({ quiet: true }),
+        command === "launch_profile" ? 1300 : 300,
+      );
+    }
+    if (successKey) {
+      showMessage(t(successKey));
+    }
   } catch (error) {
     showMessage(errorText(error), true);
   } finally {

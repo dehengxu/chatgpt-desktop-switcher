@@ -4,7 +4,7 @@
 
 ChatGPT Desktop Switcher is a macOS desktop app that launches multiple isolated ChatGPT.app profiles at the same time. Each profile keeps its own login state and Codex data.
 
-This project is currently a personal MVP. It supports creating profiles, showing their running state, launching them, bringing their windows to the front, and stopping them.
+This project is currently a personal MVP. It supports creating profiles, showing their running state, launching them, bringing their windows to the front, stopping them, and deleting them.
 
 ## Run
 
@@ -26,6 +26,8 @@ Additional profile data is stored in:
 ├── gui/
 └── cli/
 ```
+
+Deleting a profile permanently removes that directory. A running profile must be stopped before it can be deleted.
 
 For convenient terminal access, the app creates the following symbolic link on startup. The Application Support directory remains the canonical data location.
 
@@ -62,7 +64,7 @@ The design and project structure were inspired by [Claude Desktop Switcher](http
 
 ChatGPT.appをプロファイルごとに分離して、複数のログイン環境を同時に起動するmacOS用のデスクトップアプリです。プロファイルごとにログイン状態とCodexのデータを分離します。
 
-現時点では自分用のMVPです。プロファイルの作成、起動状態の表示、起動、前面表示、終了ができます。
+現時点では自分用のMVPです。プロファイルの作成、起動状態の表示、起動、前面表示、終了、削除ができます。
 
 ### 起動
 
@@ -84,6 +86,8 @@ cargo run
 ├── gui/
 └── cli/
 ```
+
+プロファイルを削除すると、このディレクトリは完全に削除されます。起動中のプロファイルは終了してから削除してください。
 
 ターミナルから扱いやすいように、アプリ起動時に次のシンボリックリンクも作成します。データの正本はApplication Support側です。
 
