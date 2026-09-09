@@ -1,14 +1,19 @@
+import { applyTranslations, initI18n, t, toggleLocale } from "./i18n.js";
+
 const { invoke } = window.__TAURI__.core;
 
 const list = document.querySelector("#profile-list");
 const form = document.querySelector("#create-form");
 const input = document.querySelector("#profile-name");
 const refreshButton = document.querySelector("#refresh-button");
+const languageToggle = document.querySelector("#language-toggle");
 const message = document.querySelector("#message");
 
 let messageTimer;
 let busy = false;
 let renderedProfilesSignature = null;
+let lastProfiles = null;
+let i18nReady = false;
 
 function showMessage(text, isError = false) {
   window.clearTimeout(messageTimer);
@@ -21,7 +26,13 @@ function showMessage(text, isError = false) {
 }
 
 function errorText(error) {
-  return typeof error === "string" ? error : "操作を完了できませんでした";
+  if (error && typeof error === "object" && typeof error.code === "string") {
+    return t(`error.${error.code}`, error.params ?? {});
+  }
+  if (typeof error === "string" && error.length > 0) {
+    return error;
+  }
+  return t("message.operationFailed");
 }
 
 function createButton(label, className, action) {
@@ -38,6 +49,7 @@ function profileSignature(profiles) {
 }
 
 function renderProfiles(profiles, { animate = true } = {}) {
+  lastProfiles = profiles;
   renderedProfilesSignature = profileSignature(profiles);
   list.replaceChildren();
   profiles.forEach((profile, index) => {
@@ -56,22 +68,24 @@ function renderProfiles(profiles, { animate = true } = {}) {
     name.textContent = profile.name;
     const kind = document.createElement("p");
     kind.className = "profile-kind";
-    kind.textContent = profile.isDefault ? "既存のChatGPT環境" : "分離プロファイル";
+    kind.textContent = profile.isDefault ? t("profile.kindDefault") : t("profile.kindIsolated");
     identity.append(name, kind);
 
     const status = document.createElement("span");
     status.className = `status${profile.running ? " running" : ""}`;
-    status.textContent = profile.running ? "起動中" : "停止中";
+    status.textContent = profile.running ? t("status.running") : t("status.stopped");
 
     const actions = document.createElement("div");
     actions.className = "actions";
-    const launchLabel = profile.running ? "前面に表示" : "起動";
+    const launchLabel = profile.running ? t("action.show") : t("action.launch");
     actions.append(
       createButton(launchLabel, "action", () => runProfileAction("launch_profile", profile.name)),
     );
     if (profile.running) {
       actions.append(
-        createButton("終了", "action stop", () => runProfileAction("stop_profile", profile.name)),
+        createButton(t("action.stop"), "action stop", () =>
+          runProfileAction("stop_profile", profile.name),
+        ),
       );
     }
     row.append(identity, status, actions);
@@ -80,9 +94,9 @@ function renderProfiles(profiles, { animate = true } = {}) {
 }
 
 async function loadProfiles({ quiet = false } = {}) {
-  if (busy) return;
+  if (busy || !i18nReady) return;
   if (!quiet && renderedProfilesSignature === null) {
-    list.innerHTML = '<p class="loading">読み込み中...</p>';
+    list.innerHTML = `<p class="loading">${t("profiles.loading")}</p>`;
   }
   try {
     const profiles = await invoke("list_profiles");
@@ -92,7 +106,7 @@ async function loadProfiles({ quiet = false } = {}) {
     }
   } catch (error) {
     renderedProfilesSignature = null;
-    list.innerHTML = '<p class="empty">プロファイルを読み込めませんでした。</p>';
+    list.innerHTML = `<p class="empty">${t("profiles.loadFailed")}</p>`;
     showMessage(errorText(error), true);
   }
 }
@@ -126,7 +140,7 @@ form.addEventListener("submit", async (event) => {
     const profiles = await invoke("create_profile", { name: input.value });
     input.value = "";
     renderProfiles(profiles);
-    showMessage("プロファイルを追加しました");
+    showMessage(t("message.profileCreated"));
   } catch (error) {
     showMessage(errorText(error), true);
   } finally {
@@ -137,5 +151,20 @@ form.addEventListener("submit", async (event) => {
 });
 
 refreshButton.addEventListener("click", () => loadProfiles());
+
+languageToggle.addEventListener("click", async () => {
+  if (!i18nReady) return;
+  await toggleLocale();
+  applyTranslations();
+  if (lastProfiles !== null) {
+    renderProfiles(lastProfiles, { animate: false });
+  }
+});
+
 window.setInterval(() => loadProfiles({ quiet: true }), 4000);
-loadProfiles();
+
+(async () => {
+  await initI18n();
+  i18nReady = true;
+  loadProfiles();
+})();

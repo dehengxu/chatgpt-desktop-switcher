@@ -76,6 +76,16 @@ header {
   letter-spacing: 0.16em;
 }
 
+.heading-main {
+  position: relative;
+}
+
+.language-toggle {
+  position: absolute;
+  top: -6px;
+  right: 0;
+}
+
 h1 {
   margin: 0;
   font-size: clamp(38px, 6vw, 58px);
