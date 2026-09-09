@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -9,6 +10,39 @@ const APP_PATH: &str = "/Applications/ChatGPT.app";
 const APP_EXECUTABLE: &str = "/Applications/ChatGPT.app/Contents/MacOS/ChatGPT";
 const DEFAULT_PROFILE: &str = "default";
 const CONVENIENCE_LINK_NAME: &str = ".chatgpt-desktop-switcher";
+
+// UI文言はフロントエンド側の辞書で組み立てるため、バックエンドは
+// ロケール非依存のエラーコードとパラメータのみを返す。
+#[derive(Debug, Serialize)]
+struct AppError {
+    code: &'static str,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    params: BTreeMap<&'static str, String>,
+}
+
+impl AppError {
+    fn new(code: &'static str) -> Self {
+        Self {
+            code,
+            params: BTreeMap::new(),
+        }
+    }
+
+    fn with_param(mut self, key: &'static str, value: impl Into<String>) -> Self {
+        self.params.insert(key, value.into());
+        self
+    }
+}
+
+impl From<std::io::Error> for AppError {
+    fn from(error: std::io::Error) -> Self {
+        unexpected(error)
+    }
+}
+
+fn unexpected(error: impl std::fmt::Display) -> AppError {
+    AppError::new("unexpectedError").with_param("message", error.to_string())
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 struct ProfileMeta {
@@ -31,64 +65,60 @@ struct RunningInstance {
     args: String,
 }
 
-fn app_data_dir() -> Result<PathBuf, String> {
-    let home = dirs::home_dir().ok_or("ホームディレクトリを取得できませんでした")?;
+fn app_data_dir() -> Result<PathBuf, AppError> {
+    let home = dirs::home_dir().ok_or_else(|| AppError::new("homeDirUnavailable"))?;
     Ok(home
         .join("Library/Application Support")
         .join("ChatGPT Desktop Switcher"))
 }
 
-fn profiles_dir() -> Result<PathBuf, String> {
+fn profiles_dir() -> Result<PathBuf, AppError> {
     Ok(app_data_dir()?.join("profiles"))
 }
 
-fn initialize_app_data() -> Result<(), String> {
+fn initialize_app_data() -> Result<(), AppError> {
     let data_dir = app_data_dir()?;
-    fs::create_dir_all(data_dir.join("profiles")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(data_dir.join("profiles"))?;
 
-    let home = dirs::home_dir().ok_or("ホームディレクトリを取得できませんでした")?;
+    let home = dirs::home_dir().ok_or_else(|| AppError::new("homeDirUnavailable"))?;
     ensure_convenience_link(&data_dir, &home.join(CONVENIENCE_LINK_NAME))
 }
 
-fn ensure_convenience_link(data_dir: &Path, link_path: &Path) -> Result<(), String> {
+fn ensure_convenience_link(data_dir: &Path, link_path: &Path) -> Result<(), AppError> {
     match fs::symlink_metadata(link_path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
-            let target = fs::read_link(link_path).map_err(|e| e.to_string())?;
+            let target = fs::read_link(link_path)?;
             if target == data_dir {
                 Ok(())
             } else {
-                Err(format!(
-                    "{} は別の場所を指しているため変更しませんでした",
-                    link_path.display()
-                ))
+                Err(AppError::new("symlinkTargetMismatch")
+                    .with_param("path", link_path.display().to_string()))
             }
         }
-        Ok(_) => Err(format!(
-            "{} がすでに存在するため変更しませんでした",
-            link_path.display()
-        )),
+        Ok(_) => Err(AppError::new("symlinkPathExists")
+            .with_param("path", link_path.display().to_string())),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            std::os::unix::fs::symlink(data_dir, link_path).map_err(|e| e.to_string())
+            Ok(std::os::unix::fs::symlink(data_dir, link_path)?)
         }
-        Err(error) => Err(error.to_string()),
+        Err(error) => Err(error.into()),
     }
 }
 
-fn profile_dir(name: &str) -> Result<PathBuf, String> {
+fn profile_dir(name: &str) -> Result<PathBuf, AppError> {
     validate_profile_name(name)?;
     Ok(profiles_dir()?.join(name))
 }
 
-fn validate_profile_name(name: &str) -> Result<(), String> {
+fn validate_profile_name(name: &str) -> Result<(), AppError> {
     let name = name.trim();
     if name.is_empty() {
-        return Err("プロファイル名を入力してください".into());
+        return Err(AppError::new("profileNameRequired"));
     }
     if name == DEFAULT_PROFILE {
-        return Err("default は既存環境用の予約名です".into());
+        return Err(AppError::new("profileNameReserved"));
     }
     if name.chars().count() > 40 {
-        return Err("プロファイル名は40文字以内にしてください".into());
+        return Err(AppError::new("profileNameTooLong"));
     }
     if name == "."
         || name == ".."
@@ -96,48 +126,48 @@ fn validate_profile_name(name: &str) -> Result<(), String> {
             .chars()
             .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':' | '\0'))
     {
-        return Err("プロファイル名に使用できない文字が含まれています".into());
+        return Err(AppError::new("profileNameInvalidChars"));
     }
     Ok(())
 }
 
 #[tauri::command]
-fn create_profile(name: String) -> Result<Vec<ProfileView>, String> {
+fn create_profile(name: String) -> Result<Vec<ProfileView>, AppError> {
     let name = name.trim();
     validate_profile_name(name)?;
 
     let dir = profile_dir(name)?;
     if dir.exists() {
-        return Err("同じ名前のプロファイルがすでにあります".into());
+        return Err(AppError::new("profileAlreadyExists"));
     }
 
-    fs::create_dir_all(dir.join("gui")).map_err(|e| e.to_string())?;
-    fs::create_dir_all(dir.join("cli")).map_err(|e| e.to_string())?;
+    fs::create_dir_all(dir.join("gui"))?;
+    fs::create_dir_all(dir.join("cli"))?;
 
     let meta = ProfileMeta {
         name: name.to_string(),
         created_at: SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| e.to_string())?
+            .map_err(unexpected)?
             .as_secs(),
     };
-    let json = serde_json::to_string_pretty(&meta).map_err(|e| e.to_string())?;
-    fs::write(dir.join("profile.json"), json).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&meta).map_err(unexpected)?;
+    fs::write(dir.join("profile.json"), json)?;
 
     list_profiles()
 }
 
 #[tauri::command]
-fn list_profiles() -> Result<Vec<ProfileView>, String> {
+fn list_profiles() -> Result<Vec<ProfileView>, AppError> {
     let instances = running_instances()?;
     let mut profiles = vec![profile_view(DEFAULT_PROFILE, true, &instances)?];
     let root = profiles_dir()?;
-    fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&root)?;
 
     let mut names = Vec::new();
-    for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        if !entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        if !entry.file_type()?.is_dir() {
             continue;
         }
         let meta_path = entry.path().join("profile.json");
@@ -162,7 +192,7 @@ fn profile_view(
     name: &str,
     is_default: bool,
     instances: &[RunningInstance],
-) -> Result<ProfileView, String> {
+) -> Result<ProfileView, AppError> {
     let gui_dir = if is_default {
         None
     } else {
@@ -178,9 +208,9 @@ fn profile_view(
 }
 
 #[tauri::command]
-fn launch_profile(name: String) -> Result<(), String> {
+fn launch_profile(name: String) -> Result<(), AppError> {
     if !Path::new(APP_PATH).exists() {
-        return Err("/Applications/ChatGPT.app が見つかりません".into());
+        return Err(AppError::new("appNotFound"));
     }
 
     let instances = running_instances()?;
@@ -190,7 +220,7 @@ fn launch_profile(name: String) -> Result<(), String> {
     } else {
         let dir = profile_dir(&name)?;
         if !dir.join("profile.json").exists() {
-            return Err("プロファイルが見つかりません".into());
+            return Err(AppError::new("profileNotFound"));
         }
         Some(dir.join("gui"))
     };
@@ -217,15 +247,15 @@ fn launch_profile(name: String) -> Result<(), String> {
             .arg(format!("--user-data-dir={}", gui_dir.display()));
     }
 
-    let status = command.status().map_err(|e| e.to_string())?;
+    let status = command.status()?;
     if !status.success() {
-        return Err("ChatGPT.appを起動できませんでした".into());
+        return Err(AppError::new("launchFailed"));
     }
     Ok(())
 }
 
 #[tauri::command]
-fn stop_profile(name: String) -> Result<(), String> {
+fn stop_profile(name: String) -> Result<(), AppError> {
     let instances = running_instances()?;
     let gui_dir = if name == DEFAULT_PROFILE {
         None
@@ -239,31 +269,29 @@ fn stop_profile(name: String) -> Result<(), String> {
     let status = Command::new("kill")
         .arg("-TERM")
         .arg(pid.to_string())
-        .status()
-        .map_err(|e| e.to_string())?;
+        .status()?;
     if status.success() {
         Ok(())
     } else {
-        Err("ChatGPT.appを終了できませんでした".into())
+        Err(AppError::new("stopFailed"))
     }
 }
 
-fn activate_pid(pid: u32) -> Result<(), String> {
+fn activate_pid(pid: u32) -> Result<(), AppError> {
     use objc2_app_kit::{NSApplicationActivationOptions, NSRunningApplication};
 
     let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid as i32)
-        .ok_or("実行中のChatGPT.appが見つかりません")?;
+        .ok_or_else(|| AppError::new("activateFailed"))?;
     app.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows);
     Ok(())
 }
 
-fn running_instances() -> Result<Vec<RunningInstance>, String> {
+fn running_instances() -> Result<Vec<RunningInstance>, AppError> {
     let output = Command::new("ps")
         .args(["-ww", "-axo", "pid=,args="])
-        .output()
-        .map_err(|e| e.to_string())?;
+        .output()?;
     if !output.status.success() {
-        return Err("実行中のChatGPT.appを確認できませんでした".into());
+        return Err(AppError::new("processListFailed"));
     }
     Ok(parse_running_instances(&String::from_utf8_lossy(
         &output.stdout,
@@ -323,7 +351,7 @@ fn contains_argument(args: &str, expected: &str) -> bool {
 
 fn main() {
     if let Err(error) = initialize_app_data() {
-        eprintln!("データディレクトリのリンクを初期化できませんでした: {error}");
+        eprintln!("failed to initialize the data directory: {error:?}");
     }
 
     tauri::Builder::default()
@@ -349,6 +377,24 @@ mod tests {
         assert!(validate_profile_name("default").is_err());
         assert!(validate_profile_name("../work").is_err());
         assert!(validate_profile_name("work/personal").is_err());
+    }
+
+    #[test]
+    fn app_error_serializes_code_with_optional_params() {
+        let error = AppError::new("profileNameReserved");
+        assert_eq!(
+            serde_json::to_value(&error).unwrap(),
+            serde_json::json!({ "code": "profileNameReserved" })
+        );
+
+        let error = AppError::new("symlinkTargetMismatch").with_param("path", "/tmp/link");
+        assert_eq!(
+            serde_json::to_value(&error).unwrap(),
+            serde_json::json!({
+                "code": "symlinkTargetMismatch",
+                "params": { "path": "/tmp/link" }
+            })
+        );
     }
 
     #[test]
