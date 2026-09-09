@@ -10,22 +10,34 @@
   <body>
     <main>
       <header>
-        <div>
+        <div class="heading-main">
           <p class="eyebrow">LOCAL PROFILE LAUNCHER</p>
           <h1>ChatGPT Desktop<br />Switcher</h1>
+          <button
+            id="language-toggle"
+            class="quiet language-toggle"
+            type="button"
+            data-i18n="language.toggle"
+          >
+            English
+          </button>
         </div>
-        <p class="summary">
+        <p class="summary" data-i18n="app.summary">
           ログイン状態をプロファイルごとに分けて、ChatGPTを同時に起動します。
         </p>
       </header>
 
       <section class="create-area" aria-labelledby="create-title">
         <div>
-          <h2 id="create-title">プロファイルを追加</h2>
-          <p>初回起動後、そのウインドウで利用するアカウントにログインしてください。</p>
+          <h2 id="create-title" data-i18n="create.title">プロファイルを追加</h2>
+          <p data-i18n="create.description">
+            初回起動後、そのウインドウで利用するアカウントにログインしてください。
+          </p>
         </div>
         <form id="create-form">
-          <label class="sr-only" for="profile-name">プロファイル名</label>
+          <label class="sr-only" for="profile-name" data-i18n="create.nameLabel">
+            プロファイル名
+          </label>
           <input
             id="profile-name"
             name="profile-name"
@@ -33,16 +45,19 @@
             maxlength="40"
             autocomplete="off"
             placeholder="例：work"
+            data-i18n-placeholder="create.namePlaceholder"
             required
           />
-          <button class="primary" type="submit">追加</button>
+          <button class="primary" type="submit" data-i18n="create.submit">追加</button>
         </form>
       </section>
 
       <section class="profiles-area" aria-labelledby="profiles-title">
         <div class="section-heading">
-          <h2 id="profiles-title">プロファイル</h2>
-          <button id="refresh-button" class="quiet" type="button">更新</button>
+          <h2 id="profiles-title" data-i18n="profiles.title">プロファイル</h2>
+          <button id="refresh-button" class="quiet" type="button" data-i18n="profiles.refresh">
+            更新
+          </button>
         </div>
         <div id="profile-list" class="profile-list" aria-live="polite"></div>
       </section>
