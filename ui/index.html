@@ -63,6 +63,32 @@
       </section>
 
       <div id="message" class="message" role="status" hidden></div>
+
+      <div id="confirmation-modal" class="confirmation-modal" hidden>
+        <button
+          id="confirmation-backdrop"
+          class="confirmation-backdrop"
+          type="button"
+          tabindex="-1"
+          aria-label="Close confirmation dialog"
+        ></button>
+        <section
+          id="confirmation-dialog"
+          class="confirmation-dialog"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="confirmation-title"
+          aria-describedby="confirmation-description"
+          tabindex="-1"
+        >
+          <h2 id="confirmation-title"></h2>
+          <p id="confirmation-description"></p>
+          <div class="confirmation-actions">
+            <button id="confirmation-cancel" class="action" type="button"></button>
+            <button id="confirmation-accept" type="button"></button>
+          </div>
+        </section>
+      </div>
     </main>
   </body>
 </html>

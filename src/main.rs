@@ -95,8 +95,10 @@ fn ensure_convenience_link(data_dir: &Path, link_path: &Path) -> Result<(), AppE
                     .with_param("path", link_path.display().to_string()))
             }
         }
-        Ok(_) => Err(AppError::new("symlinkPathExists")
-            .with_param("path", link_path.display().to_string())),
+        Ok(_) => {
+            Err(AppError::new("symlinkPathExists")
+                .with_param("path", link_path.display().to_string()))
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             Ok(std::os::unix::fs::symlink(data_dir, link_path)?)
         }
@@ -107,6 +109,28 @@ fn ensure_convenience_link(data_dir: &Path, link_path: &Path) -> Result<(), AppE
 fn profile_dir(name: &str) -> Result<PathBuf, AppError> {
     validate_profile_name(name)?;
     Ok(profiles_dir()?.join(name))
+}
+
+fn profile_directory_for(
+    name: &str,
+    profiles_root: &Path,
+    default_codex_home: &Path,
+) -> Result<PathBuf, AppError> {
+    if name == DEFAULT_PROFILE {
+        return Ok(default_codex_home.to_path_buf());
+    }
+
+    validate_profile_name(name)?;
+    let dir = profiles_root.join(name);
+    if !dir.join("profile.json").is_file() {
+        return Err(AppError::new("profileNotFound"));
+    }
+    Ok(dir)
+}
+
+fn profile_directory(name: &str) -> Result<PathBuf, AppError> {
+    let home = dirs::home_dir().ok_or_else(|| AppError::new("homeDirUnavailable"))?;
+    profile_directory_for(name, &profiles_dir()?, &home.join(".codex"))
 }
 
 fn validate_profile_name(name: &str) -> Result<(), AppError> {
@@ -273,6 +297,27 @@ fn launch_profile(name: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+fn open_profile_directory(name: String) -> Result<(), AppError> {
+    let name = name.trim();
+    let directory = profile_directory(name)?;
+    if !directory.is_dir() {
+        return Err(AppError::new("profileDirectoryNotFound"));
+    }
+
+    // `open` receives the path as a separate argument, so profile names cannot alter the command.
+    eprintln!(
+        "opening profile directory for {name}: {}",
+        directory.display()
+    );
+    let status = Command::new("open").arg(&directory).status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(AppError::new("openProfileDirectoryFailed"))
+    }
+}
+
+#[tauri::command]
 fn stop_profile(name: String) -> Result<(), AppError> {
     let instances = running_instances()?;
     let gui_dir = if name == DEFAULT_PROFILE {
@@ -378,7 +423,8 @@ fn main() {
             list_profiles,
             launch_profile,
             stop_profile,
-            delete_profile
+            delete_profile,
+            open_profile_directory
         ])
         .run(tauri::generate_context!())
         .expect("failed to run ChatGPT Desktop Switcher");
@@ -460,6 +506,26 @@ mod tests {
             "/Applications/ChatGPT --user-data-dir=/tmp/work/gui-old",
             expected
         ));
+    }
+
+    #[test]
+    fn resolves_isolated_and_default_profile_directories() {
+        let temp = tempdir().unwrap();
+        let profiles_root = temp.path().join("profiles");
+        let default_codex_home = temp.path().join(".codex");
+        let work_dir = profiles_root.join("work");
+        fs::create_dir_all(&work_dir).unwrap();
+        fs::write(work_dir.join("profile.json"), "{}").unwrap();
+
+        assert_eq!(
+            profile_directory_for("work", &profiles_root, &default_codex_home).unwrap(),
+            work_dir
+        );
+        assert_eq!(
+            profile_directory_for(DEFAULT_PROFILE, &profiles_root, &default_codex_home).unwrap(),
+            default_codex_home
+        );
+        assert!(profile_directory_for("missing", &profiles_root, &default_codex_home).is_err());
     }
 
     #[test]
